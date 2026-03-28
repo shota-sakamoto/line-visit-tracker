@@ -72,19 +72,19 @@ h1 { font-size: 20px; margin-bottom: 8px; }
 <div class="card">
   <h1>訪問記録</h1>
   <p class="status" id="statusText">初期化中...</p>
-  
+
   <button class="btn btn-start" id="btnStart" onclick="recordVisit('start')" disabled>
     訪問開始
   </button>
   <button class="btn btn-end" id="btnEnd" onclick="recordVisit('end')" disabled>
     訪問終了
   </button>
-  
+
   <div class="loading" id="loading">
     <div class="spinner"></div>
     <p style="font-size:13px;color:#888;">記録中...</p>
   </div>
-  
+
   <div class="result" id="result"></div>
 </div>
 
@@ -97,151 +97,4 @@ var userProfile = null;
 var currentPosition = null;
 
 async function init() {
-  var statusText = document.getElementById('statusText');
-  try {
-    statusText.textContent = 'LIFF初期化中...';
-    await liff.init({ liffId: LIFF_ID });
-
-    if (!liff.isLoggedIn()) {
-      statusText.textContent = 'LINEログイン中...';
-      liff.login();
-      return;
-    }
-
-    statusText.textContent = 'プロフィール取得中...';
-    userProfile = await liff.getProfile();
-    statusText.textContent = userProfile.displayName + ' さん - 位置情報取得中...';
-    getLocation();
-  } catch (err) {
-    statusText.textContent = 'エラー: ' + err.message;
-  }
-}
-
-function getLocation() {
-  var statusText = document.getElementById('statusText');
-  if (!navigator.geolocation) {
-    currentPosition = { latitude: 0, longitude: 0 };
-    document.getElementById('btnStart').disabled = false;
-    document.getElementById('btnEnd').disabled = false;
-    statusText.textContent = userProfile.displayName + ' さん - 位置情報非対応';
-    return;
-  }
-  navigator.geolocation.getCurrentPosition(
-    function(pos) {
-      currentPosition = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-      document.getElementById('btnStart').disabled = false;
-      document.getElementById('btnEnd').disabled = false;
-      statusText.textContent = userProfile.displayName + ' さん - 位置情報OK';
-    },
-    function(err) {
-      currentPosition = { latitude: 0, longitude: 0 };
-      document.getElementById('btnStart').disabled = false;
-      document.getElementById('btnEnd').disabled = false;
-      statusText.textContent = userProfile.displayName + ' さん - 位置情報取得失敗（記録は可能）';
-    },
-    { enableHighAccuracy: true, timeout: 10000 }
-  );
-}
-
-async function reverseGeocode(lat, lng) {
-  if (lat === 0 && lng === 0) return '位置情報なし';
-  try {
-    var res = await fetch('https://nominatim.openstreetmap.org/reverse?lat=' + lat + '&lon=' + lng + '&format=json&accept-language=ja');
-    var data = await res.json();
-    return data.display_name || '';
-  } catch(e) {
-    return '';
-  }
-}
-
-function sendToGAS(payload) {
-  return new Promise(function(resolve) {
-    var iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.name = 'gas_frame_' + Date.now();
-    document.body.appendChild(iframe);
-
-    var form = document.createElement('form');
-    form.method = 'POST';
-    form.action = GAS_URL;
-    form.target = iframe.name;
-
-    var input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = 'payload';
-    input.value = JSON.stringify(payload);
-    form.appendChild(input);
-
-    document.body.appendChild(form);
-    form.submit();
-
-    setTimeout(function() {
-      try {
-        document.body.removeChild(form);
-        document.body.removeChild(iframe);
-      } catch(e) {}
-      resolve();
-    }, 3000);
-  });
-}
-
-async function recordVisit(action) {
-  if (!userProfile) return;
-  var lat = currentPosition ? currentPosition.latitude : 0;
-  var lng = currentPosition ? currentPosition.longitude : 0;
-
-  var btnStart = document.getElementById('btnStart');
-  var btnEnd = document.getElementById('btnEnd');
-  var loading = document.getElementById('loading');
-  var result = document.getElementById('result');
-  btnStart.disabled = true;
-  btnEnd.disabled = true;
-  loading.classList.add('show');
-  result.style.display = 'none';
-
-  try {
-    try {
-      var freshPos = await new Promise(function(resolve, reject) {
-        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 5000 });
-      });
-      lat = freshPos.coords.latitude;
-      lng = freshPos.coords.longitude;
-    } catch(e) {}
-
-    var address = await reverseGeocode(lat, lng);
-    var payload = {
-      source: 'liff',
-      action: action,
-      userId: userProfile.userId,
-      displayName: userProfile.displayName,
-      latitude: lat,
-      longitude: lng,
-      address: address,
-      timestamp: new Date().toISOString()
-    };
-
-    await sendToGAS(payload);
-
-    result.className = 'result';
-    if (action === 'start') {
-      result.textContent = '訪問開始を記録しました（' + new Date().toLocaleTimeString('ja-JP') + '）';
-    } else {
-      result.textContent = '訪問終了を記録しました（' + new Date().toLocaleTimeString('ja-JP') + '）';
-    }
-    result.style.display = 'block';
-    setTimeout(function() { if (liff.isInClient()) { liff.closeWindow(); } }, 3000);
-  } catch (err) {
-    result.className = 'result error';
-    result.textContent = 'エラー: ' + err.message;
-    result.style.display = 'block';
-  } finally {
-    loading.classList.remove('show');
-    btnStart.disabled = false;
-    btnEnd.disabled = false;
-  }
-}
-
-init();
-</script>
-</body>
-</html>
+  var statusText = document.getElementById('st
