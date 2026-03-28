@@ -154,6 +154,37 @@ async function reverseGeocode(lat, lng) {
   }
 }
 
+function sendToGAS(payload) {
+  return new Promise(function(resolve) {
+    var iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.name = 'gas_frame_' + Date.now();
+    document.body.appendChild(iframe);
+
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = GAS_URL;
+    form.target = iframe.name;
+
+    var input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'payload';
+    input.value = JSON.stringify(payload);
+    form.appendChild(input);
+
+    document.body.appendChild(form);
+    form.submit();
+
+    setTimeout(function() {
+      try {
+        document.body.removeChild(form);
+        document.body.removeChild(iframe);
+      } catch(e) {}
+      resolve();
+    }, 3000);
+  });
+}
+
 async function recordVisit(action) {
   if (!userProfile) return;
   var lat = currentPosition ? currentPosition.latitude : 0;
@@ -189,12 +220,7 @@ async function recordVisit(action) {
       timestamp: new Date().toISOString()
     };
 
-    await fetch(GAS_URL, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(payload)
-    });
+    await sendToGAS(payload);
 
     result.className = 'result';
     if (action === 'start') {
