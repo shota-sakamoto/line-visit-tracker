@@ -157,13 +157,12 @@ async function reverseGeocode(lat, lng) {
 function sendToGAS(payload) {
   return new Promise(function(resolve) {
     var params = encodeURIComponent(JSON.stringify(payload));
-    var script = document.createElement('script');
-    script.src = GAS_URL + '?payload=' + params + '&callback=gasCallback&t=' + Date.now();
-    window.gasCallback = function() { resolve(); };
-    script.onload = function() { resolve(); try { document.head.removeChild(script); } catch(e){} };
-    script.onerror = function() { resolve(); try { document.head.removeChild(script); } catch(e){} };
-    document.head.appendChild(script);
-    setTimeout(resolve, 4000);
+    var url = GAS_URL + '?payload=' + params + '&t=' + Date.now();
+    var w = window.open(url, '_blank', 'width=1,height=1,left=-100,top=-100');
+    setTimeout(function() {
+      try { if (w) w.close(); } catch(e) {}
+      resolve();
+    }, 4000);
   });
 }
 
