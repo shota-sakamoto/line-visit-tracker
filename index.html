@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>訪問記録</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f5f5f5;
+  color: #333;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+.card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 32px 24px;
+  max-width: 360px;
+  width: 100%;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  text-align: center;
+}
+h1 { font-size: 20px; margin-bottom: 8px; }
+.status { font-size: 14px; color: #888; margin-bottom: 24px; }
+.btn {
+  display: block;
+  width: 100%;
+  padding: 16px;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 12px;
+  transition: opacity 0.2s;
+}
+.btn:active { opacity: 0.7; }
+.btn-start { background: #0D94B1; color: #fff; }
+.btn-end { background: #E85D24; color: #fff; }
+.btn:disabled { background: #ccc; cursor: not-allowed; }
+.result {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f0f9f4;
+  color: #1a7f4b;
+  font-size: 14px;
+  display: none;
+}
+.result.error { background: #fef2f2; color: #b91c1c; }
+.loading { display: none; margin: 16px 0; }
+.loading.show { display: block; }
+.spinner {
+  width: 32px; height: 32px;
+  border: 3px solid #e0e0e0;
+  border-top-color: #0D94B1;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 8px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>訪問記録</h1>
+  <p class="status" id="statusText">初期化中...</p>
+  
+  <button class="btn btn-start" id="btnStart" onclick="recordVisit('start')" disabled>
+    訪問開始
+  </button>
+  <button class="btn btn-end" id="btnEnd" onclick="recordVisit('end')" disabled>
+    訪問終了
+  </button>
+  
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <p style="font-size:13px;color:#888;">記録中...</p>
+  </div>
+  
+  <div class="result" id="result"></div>
+</div>
+
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+var LIFF_ID = '2009629023-QDAqnjW3';
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbwlgPuoBYy5yV-v9BlBjFHYRUjzOMKT208VR7R4rU4ge3r-aWi2UD3uyZ1w3FAGftSKBQ/exec';
+
+var userProfile = null;
+var currentPosition = null;
+
+async function init() {
+  var statusText = document.getElementById('statusText');
+  try {
+    statusText.textContent = 'LIFF初期化中...';
+    await liff.init({ liffId: LIFF_ID });
+
+    if (!liff.isLoggedIn()) {
+      statusText.textContent = 'LINEログイン中...';
+      liff.login();
+      return;
+    }
+
+    statusText.textContent = 'プロフィール取得中...';
+    userProfile = await liff.getProfile();
+    statusText.textContent = userProfile.displayName + ' さん - 位置情報取得中...';
+    getLocation();
+  } catch (err) {
+    statusText.textContent = 'エラー: ' + err.message;
+  }
+}
+
+function getLocation() {
+  var statusText = document.getElementById('statusText');
+  if (!navigator.geolocation) {
+    currentPosition = { latitude: 0, longitude: 0 };
+    document.getElementById('btnStart').disabled = false;
+    document.getElementById('btnEnd').disabled = false;
+    statusText.textContent = userProfile.displayName + ' さん - 位置情報非対応';
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    function(pos) {
+      currentPosition = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      document.getElementById('btnStart').disabled = false;
+      document.getElementById('btnEnd').disabled = false;
+      statusText.textContent = userProfile.displayName + ' さん - 位置情報OK';
+    },
+    function(err) {
+      currentPosition = { latitude: 0, longitude: 0 };
+      document.getElementById('btnStart').disabled = false;
+      document.getElementById('btnEnd').disabled = false;
+      statusText.textContent = userProfile.displayName + ' さん - 位置情報取得失敗（記録は可能）';
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+async function reverseGeocode(lat, lng) {
+  if (lat === 0 && lng === 0) return '位置情報なし';
+  try {
+    var res = await fetch('https://nominatim.openstreetmap.org/reverse?lat=' + lat + '&lon=' + lng + '&format=json&accept-language=ja');
+    var data = await res.json();
+    return data.display_name || '';
+  } catch(e) {
+    return '';
+  }
+}
+
+async function recordVisit(action) {
+  if (!userProfile) return;
+  var lat = currentPosition ? currentPosition.latitude : 0;
+  var lng = currentPosition ? currentPosition.longitude : 0;
+
+  var btnStart = document.getElementById('btnStart');
+  var btnEnd = document.getElementById('btnEnd');
+  var loading = document.getElementById('loading');
+  var result = document.getElementById('result');
+  btnStart.disabled = true;
+  btnEnd.disabled = true;
+  loading.classList.add('show');
+  result.style.display = 'none';
+
+  try {
+    try {
+      var freshPos = await new Promise(function(resolve, reject) {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 5000 });
+      });
+      lat = freshPos.coords.latitude;
+      lng = freshPos.coords.longitude;
+    } catch(e) {}
+
+    var address = await reverseGeocode(lat, lng);
+    var payload = {
+      source: 'liff',
+      action: action,
+      userId: userProfile.userId,
+      displayName: userProfile.displayName,
+      latitude: lat,
+      longitude: lng,
+      address: address,
+      timestamp: new Date().toISOString()
+    };
+
+    await fetch(GAS_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload)
+    });
+
+    result.className = 'result';
+    if (action === 'start') {
+      result.textContent = '訪問開始を記録しました（' + new Date().toLocaleTimeString('ja-JP') + '）';
+    } else {
+      result.textContent = '訪問終了を記録しました（' + new Date().toLocaleTimeString('ja-JP') + '）';
+    }
+    result.style.display = 'block';
+    setTimeout(function() { if (liff.isInClient()) { liff.closeWindow(); } }, 3000);
+  } catch (err) {
+    result.className = 'result error';
+    result.textContent = 'エラー: ' + err.message;
+    result.style.display = 'block';
+  } finally {
+    loading.classList.remove('show');
+    btnStart.disabled = false;
+    btnEnd.disabled = false;
+  }
+}
+
+init();
+</script>
+</body>
+</html>
