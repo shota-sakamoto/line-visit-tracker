@@ -156,12 +156,14 @@ async function reverseGeocode(lat, lng) {
 
 function sendToGAS(payload) {
   return new Promise(function(resolve) {
-    var img = new Image();
     var params = encodeURIComponent(JSON.stringify(payload));
-    img.onload = function() { resolve(); };
-    img.onerror = function() { resolve(); };
-    img.src = GAS_URL + '?payload=' + params + '&t=' + Date.now();
-    setTimeout(resolve, 3000);
+    var script = document.createElement('script');
+    script.src = GAS_URL + '?payload=' + params + '&callback=gasCallback&t=' + Date.now();
+    window.gasCallback = function() { resolve(); };
+    script.onload = function() { resolve(); try { document.head.removeChild(script); } catch(e){} };
+    script.onerror = function() { resolve(); try { document.head.removeChild(script); } catch(e){} };
+    document.head.appendChild(script);
+    setTimeout(resolve, 4000);
   });
 }
 
