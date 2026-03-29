@@ -65,6 +65,7 @@ h1 { font-size: 20px; margin-bottom: 8px; }
   margin: 0 auto 8px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+.hidden { display: none; }
 </style>
 </head>
 <body>
@@ -73,7 +74,16 @@ h1 { font-size: 20px; margin-bottom: 8px; }
   <h1 id="titleText">訪問記録</h1>
   <p class="status" id="statusText">初期化中...</p>
 
-  <div class="loading show" id="loading">
+  <div id="buttons">
+    <button class="btn btn-start" id="btnStart" onclick="recordVisit('start')" disabled>
+      訪問開始
+    </button>
+    <button class="btn btn-end" id="btnEnd" onclick="recordVisit('end')" disabled>
+      訪問終了
+    </button>
+  </div>
+
+  <div class="loading" id="loading">
     <div class="spinner"></div>
     <p style="font-size:13px;color:#888;" id="loadingText">準備中...</p>
   </div>
@@ -88,30 +98,45 @@ var GAS_URL = 'https://script.google.com/a/macros/warm-relationship.com/s/AKfycb
 
 var userProfile = null;
 var currentPosition = null;
+var autoMode = null;
 
 function getMode() {
-  var url = window.location.href;
-  if (url.indexOf('mode=start') !== -1) return 'start';
-  if (url.indexOf('mode=end') !== -1) return 'end';
+  try {
+    var url = window.location.href;
+    if (url.indexOf('mode=start') !== -1) return 'start';
+    if (url.indexOf('mode=end') !== -1) return 'end';
+    // LIFFのURLからも取得を試みる
+    if (typeof liff !== 'undefined' && liff.getContext) {
+      var context = liff.getContext();
+      if (context && context.utouId) return null;
+    }
+  } catch(e) {}
   return null;
 }
 
 async function init() {
   var statusText = document.getElementById('statusText');
   var titleText = document.getElementById('titleText');
-  var loadingText = document.getElementById('loadingText');
-  var mode = getMode();
-
-  if (mode === 'start') {
-    titleText.textContent = '訪問開始';
-  } else if (mode === 'end') {
-    titleText.textContent = '訪問終了';
-  }
+  var buttons = document.getElementById('buttons');
+  var loading = document.getElementById('loading');
 
   try {
     statusText.textContent = 'LIFF初期化中...';
-    loadingText.textContent = '初期化中...';
     await liff.init({ liffId: LIFF_ID });
+
+    // mode取得
+    autoMode = getMode();
+    if (autoMode === 'start') {
+      titleText.textContent = '訪問開始';
+      buttons.classList.add('hidden');
+      loading.classList.add('show');
+      document.getElementById('loadingText').textContent = '訪問開始を記録中...';
+    } else if (autoMode === 'end') {
+      titleText.textContent = '訪問終了';
+      buttons.classList.add('hidden');
+      loading.classList.add('show');
+      document.getElementById('loadingText').textContent = '訪問終了を記録中...';
+    }
 
     if (!liff.isLoggedIn()) {
       statusText.textContent = 'LINEログイン中...';
@@ -119,4 +144,115 @@ async function init() {
       return;
     }
 
-    statusText.textContent = 'プロフィール取得中...';
+    userProfile = await liff.getProfile();
+    statusText.textContent = userProfile.displayName + ' さん';
+
+    // 位置情報取得
+    try {
+      var pos = await new Promise(function(resolve, reject) {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
+      });
+      currentPosition = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+    } catch(e) {
+      currentPosition = { latitude: 0, longitude: 0 };
+    }
+
+    // autoModeがあれば自動実行
+    if (autoMode) {
+      await recordVisit(autoMode);
+    } else {
+      // ボタン表示
+      loading.classList.remove('show');
+      buttons.classList.remove('hidden');
+      document.getElementById('btnStart').disabled = false;
+      document.getElementById('btnEnd').disabled = false;
+      statusText.textContent = userProfile.displayName + ' さん - 位置情報OK';
+    }
+
+  } catch (err) {
+    document.getElementById('loading').classList.remove('show');
+    buttons.classList.remove('hidden');
+    statusText.textContent = 'エラー: ' + err.message;
+  }
+}
+
+async function reverseGeocode(lat, lng) {
+  if (lat === 0 && lng === 0) return '位置情報なし';
+  try {
+    var res = await fetch('https://nominatim.openstreetmap.org/reverse?lat=' + lat + '&lon=' + lng + '&format=json&accept-language=ja');
+    var data = await res.json();
+    return data.display_name || '';
+  } catch(e) {
+    return '';
+  }
+}
+
+function sendToGAS(payload) {
+  return new Promise(function(resolve) {
+    var params = encodeURIComponent(JSON.stringify(payload));
+    var url = GAS_URL + '?payload=' + params + '&t=' + Date.now();
+    var w = window.open(url, '_blank', 'width=1,height=1,left=-100,top=-100');
+    setTimeout(function() {
+      try { if (w) w.close(); } catch(e) {}
+      resolve();
+    }, 4000);
+  });
+}
+
+async function recordVisit(action) {
+  if (!userProfile) return;
+  var lat = currentPosition ? currentPosition.latitude : 0;
+  var lng = currentPosition ? currentPosition.longitude : 0;
+  var loading = document.getElementById('loading');
+  var buttons = document.getElementById('buttons');
+  var result = document.getElementById('result');
+
+  buttons.classList.add('hidden');
+  loading.classList.add('show');
+  document.getElementById('loadingText').textContent = '記録を送信中...';
+  result.style.display = 'none';
+
+  try {
+    try {
+      var freshPos = await new Promise(function(resolve, reject) {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 5000 });
+      });
+      lat = freshPos.coords.latitude;
+      lng = freshPos.coords.longitude;
+    } catch(e) {}
+
+    var address = await reverseGeocode(lat, lng);
+    var payload = {
+      source: 'liff',
+      action: action,
+      userId: userProfile.userId,
+      displayName: userProfile.displayName,
+      latitude: lat,
+      longitude: lng,
+      address: address,
+      timestamp: new Date().toISOString()
+    };
+
+    await sendToGAS(payload);
+
+    loading.classList.remove('show');
+    result.className = 'result';
+    if (action === 'start') {
+      result.textContent = '✅ 訪問開始を記録しました（' + new Date().toLocaleTimeString('ja-JP') + '）';
+    } else {
+      result.textContent = '🏁 訪問終了を記録しました（' + new Date().toLocaleTimeString('ja-JP') + '）';
+    }
+    result.style.display = 'block';
+    setTimeout(function() { if (liff.isInClient()) { liff.closeWindow(); } }, 2000);
+  } catch (err) {
+    loading.classList.remove('show');
+    result.className = 'result error';
+    result.textContent = 'エラー: ' + err.message;
+    result.style.display = 'block';
+  }
+}
+
+init();
+</script>
+</body>
+</html>
